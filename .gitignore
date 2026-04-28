@@ -1,0 +1,31 @@
+# Dependencies
+node_modules/
+
+# Build outputs
+out/
+release/
+
+# Logs
+*.log
+npm-debug.log*
+
+# Environment
+.env
+.env.*
+
+# Claude Code
+.claude/
+
+# Editor
+.vscode/
+.idea/
+*.suo
+*.user
+
+# OS
+.DS_Store
+Thumbs.db
+
+# electron-builder cache
+.cache/
+dist-electron/

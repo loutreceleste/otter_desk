@@ -1,0 +1,38 @@
+appId: com.otterdesk.app
+productName: OtterDesk
+copyright: OtterDesk
+
+directories:
+  buildResources: resources
+  output: release
+
+files:
+  - out/**/*
+  - "!**/*.{iobj,ipdb,exp,lib}"
+  - "!out/renderer/assets/*.map"
+
+extraResources:
+  - from: resources/icon.ico
+    to: icon.ico
+
+win:
+  executableName: OtterDesk
+  target:
+    - target: nsis
+      arch:
+        - x64
+    - target: portable
+      arch:
+        - x64
+  icon: resources/icon.ico
+
+nsis:
+  oneClick: true
+  perMachine: false
+  deleteAppDataOnUninstall: false
+
+portable:
+  artifactName: OtterDesk-${version}-portable.exe
+
+electronLanguages:
+  - fr

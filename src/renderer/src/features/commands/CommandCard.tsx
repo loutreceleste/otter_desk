@@ -1,9 +1,12 @@
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { Check, Copy, GripVertical, Pencil, Star, Trash2 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Badge } from "../../components/ui/Badge";
 import { copyToClipboard } from "../../lib/ipc";
+import { terminalsSupported } from "../../lib/terminals";
+import { SendToTerminalButton, type SendFeedback } from "../terminals/SendToTerminalButton";
+import { parseCommandSteps } from "../../../../shared/commandSteps";
 import type { Command } from "../../types";
 
 interface CommandCardProps {
@@ -15,42 +18,75 @@ interface CommandCardProps {
   draggable?: boolean;
 }
 
-type Step = { label: string; cmd: string };
 
-function parseSteps(raw: string): Step[] {
-  try {
-    const parsed = JSON.parse(raw);
-    if (Array.isArray(parsed) && parsed.length > 0) {
-      if (typeof parsed[0] === "string") return parsed.map((cmd: string) => ({ label: "", cmd }));
-      return parsed as Step[];
-    }
-  } catch {}
-  return [{ label: "", cmd: raw }];
-}
+// Style commun des boutons d'action d'un bloc (Copier, Envoyer)
+const BLOCK_ACTION_IDLE =
+  "bg-indigo-100 dark:bg-zinc-800 text-indigo-500 dark:text-zinc-400 hover:bg-indigo-200 dark:hover:bg-zinc-700 hover:text-indigo-600 dark:hover:text-zinc-200";
 
-function CmdBlock({ text }: { text: string }) {
+function CmdBlock({ text, commandId, step, projectId }: { text: string; commandId: number; step: number; projectId: number }) {
   const [copied, setCopied] = useState(false);
+  const [feedback, setFeedback] = useState<SendFeedback | null>(null);
   const handle = async () => {
     await copyToClipboard(text);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
+
+  useEffect(() => {
+    if (!feedback) return;
+    const t = setTimeout(() => setFeedback(null), feedback.kind === "success" ? 2500 : feedback.kind === "warning" ? 6000 : 9000);
+    return () => clearTimeout(t);
+  }, [feedback]);
+
   return (
-    <div className="relative rounded-lg bg-indigo-50 dark:bg-black/50 border border-indigo-100 dark:border-zinc-700">
-      <pre className="text-xs font-mono text-indigo-700 dark:text-emerald-400 px-3 py-2.5 overflow-x-auto whitespace-pre-wrap break-all leading-relaxed pr-10">
-        {text}
-      </pre>
-      <button
-        onClick={handle}
-        className={`absolute top-2 right-2 p-1.5 rounded-md transition-all duration-150 ${
-          copied
-            ? "bg-indigo-200 dark:bg-emerald-500/20 text-indigo-600 dark:text-emerald-400"
-            : "bg-indigo-100 dark:bg-zinc-800 text-indigo-400 dark:text-zinc-400 hover:bg-indigo-200 dark:hover:bg-zinc-700 hover:text-indigo-600 dark:hover:text-zinc-200"
-        }`}
-        title={copied ? "Copié !" : "Copier"}
-      >
-        {copied ? <Check size={13} /> : <Copy size={13} />}
-      </button>
+    <div>
+      <div className="relative rounded-lg bg-indigo-50 dark:bg-black/50 border border-indigo-100 dark:border-zinc-700">
+        <pre
+          className={`text-xs font-mono text-indigo-700 dark:text-emerald-400 px-3 py-2.5 overflow-x-auto whitespace-pre-wrap break-all leading-relaxed ${
+            terminalsSupported ? "pr-[4.25rem]" : "pr-10"
+          }`}
+        >
+          {text}
+        </pre>
+        <div className="absolute top-2 right-2 flex items-center gap-1">
+          {terminalsSupported && (
+            <SendToTerminalButton
+              text={text}
+              commandId={commandId}
+              step={step}
+              projectId={projectId}
+              onFeedback={setFeedback}
+              buttonClassName={`p-1.5 rounded-md transition-all duration-150 ${BLOCK_ACTION_IDLE}`}
+            />
+          )}
+          <button
+            onClick={handle}
+            className={`p-1.5 rounded-md transition-all duration-150 ${
+              copied
+                ? "bg-indigo-200 dark:bg-emerald-500/20 text-indigo-600 dark:text-emerald-400"
+                : BLOCK_ACTION_IDLE
+            }`}
+            title={copied ? "Copié !" : "Copier"}
+          >
+            {copied ? <Check size={13} /> : <Copy size={13} />}
+          </button>
+        </div>
+      </div>
+      {feedback && (
+        <p
+          role="status"
+          aria-live="polite"
+          className={`mt-1 px-1 text-[11px] leading-snug ${
+            feedback.kind === "success"
+              ? "text-emerald-600 dark:text-emerald-400"
+              : feedback.kind === "warning"
+                ? "text-amber-600 dark:text-amber-400"
+                : "text-red-600 dark:text-red-400"
+          }`}
+        >
+          {feedback.message}
+        </p>
+      )}
     </div>
   );
 }
@@ -73,14 +109,14 @@ export function CommandCard({
     zIndex: isDragging ? 10 : undefined,
   };
 
-  const steps = useMemo(() => parseSteps(command.command), [command.command]);
+  const steps = useMemo(() => parseCommandSteps(command.command), [command.command]);
   const isMulti = steps.length > 1;
 
   return (
     <div
       ref={setNodeRef}
       style={style}
-      className="group bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl p-4 hover:border-zinc-300 dark:hover:border-zinc-700 hover:shadow-sm transition-all duration-150"
+      className="group bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl p-4 hover:border-zinc-300 dark:hover:border-zinc-700 hover:shadow-sm transition-all duration-150"
     >
       {/* Header */}
       <div className="flex items-start justify-between gap-3 mb-2">
@@ -154,7 +190,7 @@ export function CommandCard({
                 {step.label || `Étape ${i + 1}`}
               </p>
             )}
-            <CmdBlock text={step.cmd} />
+            <CmdBlock text={step.cmd} commandId={command.id} step={i} projectId={command.project_id} />
           </div>
         ))}
       </div>

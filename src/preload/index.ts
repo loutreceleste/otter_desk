@@ -1,6 +1,12 @@
 import { contextBridge, ipcRenderer } from "electron";
 
 const api = {
+  /** Plateforme (lecture seule) : adapte la barre de titre sous macOS */
+  platform: process.platform,
+  app: {
+    /** Version réelle (app.getVersion()) et état du raccourci global. */
+    getInfo: () => ipcRenderer.invoke("app:getInfo"),
+  },
   projects: {
     getAll: () => ipcRenderer.invoke("projects:getAll"),
     create: (input: unknown) => ipcRenderer.invoke("projects:create", input),
@@ -36,6 +42,28 @@ const api = {
     minimize: () => ipcRenderer.invoke("window:minimize"),
     maximize: () => ipcRenderer.invoke("window:maximize"),
     close: () => ipcRenderer.invoke("window:close"),
+  },
+  terminals: {
+    list: () => ipcRenderer.invoke("terminals:list"),
+    send: (req: unknown) => ipcRenderer.invoke("terminals:send", req),
+    startPairing: (providerId: string) => ipcRenderer.invoke("terminals:pairing:start", providerId),
+    cancelPairing: (providerId: string) => ipcRenderer.invoke("terminals:pairing:cancel", providerId),
+    unpair: (providerId: string) => ipcRenderer.invoke("terminals:unpair", providerId),
+    /** Abonnement aux changements de terminaux ; retourne la fonction de désabonnement. */
+    onChanged: (listener: () => void) => {
+      const handler = () => listener();
+      ipcRenderer.on("terminals:changed", handler);
+      return () => {
+        ipcRenderer.removeListener("terminals:changed", handler);
+      };
+    },
+    onPaired: (listener: () => void) => {
+      const handler = () => listener();
+      ipcRenderer.on("terminals:paired", handler);
+      return () => {
+        ipcRenderer.removeListener("terminals:paired", handler);
+      };
+    },
   },
   data: {
     search: (query: string) => ipcRenderer.invoke("data:search", query),

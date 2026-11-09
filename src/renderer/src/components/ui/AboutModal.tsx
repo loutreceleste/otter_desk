@@ -1,12 +1,21 @@
-import { FileText, FolderOpen, Keyboard, Tag, Terminal } from "lucide-react";
+import { AlertTriangle, FileText, FolderOpen, Keyboard, Settings2, Tag, Terminal } from "lucide-react";
+import { useState } from "react";
 import headbandUrl from "../../assets/headband.png";
+import { useAppInfo } from "../../lib/appInfo";
+import { getRevealAfterSend, setRevealAfterSend } from "../../lib/preferences";
+import { terminalsSupported } from "../../lib/terminals";
 import { Modal } from "./Modal";
+import { Switch } from "./Switch";
 
 interface AboutModalProps {
   onClose: () => void;
 }
 
 export function AboutModal({ onClose }: AboutModalProps) {
+  const info = useAppInfo();
+  const [revealAfterSend, setReveal] = useState(getRevealAfterSend);
+  const shortcut = info?.shortcut;
+
   return (
     <Modal title="À propos d'OtterDesk" onClose={onClose}>
       <div className="space-y-5">
@@ -18,9 +27,11 @@ export function AboutModal({ onClose }: AboutModalProps) {
             className="h-10 object-contain object-left dark:invert-0 invert"
             draggable={false}
           />
-          <span className="text-xs font-mono text-zinc-400 bg-zinc-100 dark:bg-zinc-800 px-2 py-0.5 rounded-full">
-            v{__APP_VERSION__}
-          </span>
+          {info && (
+            <span className="text-xs font-mono text-zinc-400 bg-zinc-100 dark:bg-zinc-800 px-2 py-0.5 rounded-full">
+              v{info.version}
+            </span>
+          )}
         </div>
 
         {/* Description */}
@@ -62,14 +73,40 @@ export function AboutModal({ onClose }: AboutModalProps) {
           <div className="flex items-center gap-2">
             <span className="text-xs text-zinc-500 dark:text-zinc-400">Afficher / masquer OtterDesk</span>
             <div className="ml-auto flex items-center gap-1">
-              {["Ctrl", "Shift", "Space"].map((k) => (
+              {(shortcut?.keys ?? []).map((k) => (
                 <kbd key={k} className="px-1.5 py-0.5 text-xs font-mono rounded bg-white dark:bg-zinc-700 border border-zinc-300 dark:border-zinc-600 text-zinc-700 dark:text-zinc-200 shadow-sm">
                   {k}
                 </kbd>
               ))}
             </div>
           </div>
+          {shortcut && !shortcut.registered && (
+            <p className="mt-2 flex items-start gap-1.5 text-xs text-amber-700 dark:text-amber-400">
+              <AlertTriangle size={12} className="shrink-0 mt-0.5" />
+              {shortcut.message ?? "Raccourci inactif."}
+            </p>
+          )}
         </div>
+
+        {/* Préférences (envoi vers les terminaux : macOS) */}
+        {terminalsSupported && (
+          <div className="rounded-lg bg-zinc-50 dark:bg-zinc-800/60 border border-zinc-200 dark:border-zinc-700 px-4 py-3">
+            <div className="flex items-center gap-2 mb-2">
+              <Settings2 size={13} className="text-zinc-500 dark:text-zinc-400" />
+              <p className="text-xs font-semibold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">Préférences</p>
+            </div>
+            <Switch
+              id="pref-reveal-terminal"
+              checked={revealAfterSend}
+              onChange={(v) => {
+                setReveal(v);
+                setRevealAfterSend(v);
+              }}
+              label="Afficher le terminal après l'envoi"
+              description="Met automatiquement au premier plan le terminal sélectionné après l'envoi d'une commande."
+            />
+          </div>
+        )}
 
         {/* Licence */}
         <div className="rounded-lg bg-zinc-50 dark:bg-zinc-800/60 border border-zinc-200 dark:border-zinc-700 px-4 py-3">

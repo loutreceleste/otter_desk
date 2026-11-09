@@ -1,0 +1,77 @@
+{
+  "name": "otterdesk-terminal-bridge",
+  "displayName": "OtterDesk — Terminal Bridge",
+  "description": "Permet à OtterDesk d'envoyer une commande vers un terminal intégré précis de VS Code (macOS).",
+  "version": "0.2.0",
+  "publisher": "otterdesk",
+  "private": true,
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/loutreceleste/otter_desk.git"
+  },
+  "engines": {
+    "vscode": "^1.93.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "extensionKind": [
+    "ui"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./dist/extension.js",
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": true
+    },
+    "virtualWorkspaces": true
+  },
+  "contributes": {
+    "commands": [
+      {
+        "command": "otterdesk.pair",
+        "title": "Connecter à OtterDesk",
+        "category": "OtterDesk"
+      },
+      {
+        "command": "otterdesk.unpair",
+        "title": "Oublier l'appairage OtterDesk",
+        "category": "OtterDesk"
+      },
+      {
+        "command": "otterdesk.showStatus",
+        "title": "Afficher l'état de la connexion",
+        "category": "OtterDesk"
+      }
+    ],
+    "configuration": {
+      "title": "OtterDesk",
+      "properties": {
+        "otterdesk.dataDirectory": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "Dossier de données d'OtterDesk (contient `terminal-bridge.json`). Vide : `~/Library/Application Support/otter-desk`."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "typecheck": "tsc --noEmit",
+    "package": "npm run typecheck && npm run build && vsce package --no-dependencies --skip-license --out otterdesk-terminal-bridge.vsix"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.5",
+    "@types/vscode": "~1.93.0",
+    "@vscode/vsce": "^4.1.0",
+    "esbuild": "^0.21.5",
+    "typescript": "^5.9.3"
+  },
+  "allowScripts": {
+    "esbuild@0.21.5": true,
+    "@vscode/vsce-sign": false
+  }
+}

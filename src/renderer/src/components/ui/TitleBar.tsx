@@ -1,8 +1,28 @@
+import { MAC_TITLEBAR_CSS } from "../../../../shared/windowLayout";
+
+const isMac = window.api.platform === "darwin";
+
 export function TitleBar() {
+  // macOS : feux tricolores natifs (titleBarStyle "hiddenInset") à gauche.
+  // Hauteur et marge calculées depuis la géométrie partagée avec le main
+  // (src/shared/windowLayout.ts) : barre de 40 pt, boutons centrés verticalement,
+  // titre placé 18 pt après le bouton vert et centré sur le même axe.
+  if (isMac) {
+    return (
+      <div
+        className="drag-region flex items-center shrink-0 bg-zinc-50 dark:bg-zinc-900 border-b border-zinc-200 dark:border-zinc-700 select-none"
+        style={{ height: MAC_TITLEBAR_CSS.heightPx, paddingLeft: MAC_TITLEBAR_CSS.paddingLeftPx }}
+      >
+        <span className="text-xs leading-none font-bold text-zinc-500 dark:text-zinc-400">OtterDesk</span>
+        <div className="flex-1 h-full" />
+      </div>
+    );
+  }
+
   return (
     <div className="drag-region flex items-center h-8 shrink-0 bg-zinc-50 dark:bg-zinc-900 border-b border-zinc-200 dark:border-zinc-700 select-none">
       {/* Nom de l'app */}
-      <span className="px-4 text-xs font-semibold text-zinc-500 dark:text-zinc-400">OtterDesk</span>
+      <span className="px-4 text-xs font-bold text-zinc-500 dark:text-zinc-400">OtterDesk</span>
 
       {/* Zone draggable */}
       <div className="flex-1 h-full" />

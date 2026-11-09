@@ -29,3 +29,9 @@ Thumbs.db
 # electron-builder cache
 .cache/
 dist-electron/
+
+# Tests compilés
+out-tests/
+
+# Fichiers incrémentaux TypeScript (générés)
+*.tsbuildinfo

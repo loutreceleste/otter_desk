@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+  <dict>
+    <!-- Entitlements par défaut d'electron-builder (runtime Electron sous Hardened Runtime) -->
+    <key>com.apple.security.cs.allow-jit</key>
+    <true/>
+    <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+    <true/>
+    <!-- Requis par la signature ad hoc (frameworks Electron pré-signés) -->
+    <key>com.apple.security.cs.disable-library-validation</key>
+    <true/>
+    <!-- Envoi de commandes vers Terminal.app (AppleScript) : soumis à l'autorisation « Automatisation » -->
+    <key>com.apple.security.automation.apple-events</key>
+    <true/>
+  </dict>
+</plist>

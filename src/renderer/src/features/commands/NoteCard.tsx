@@ -1,6 +1,8 @@
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { GripVertical, Pencil, Trash2 } from "lucide-react";
+import { useMemo } from "react";
+import { sanitizeNoteHtml } from "../../lib/sanitizeHtml";
 import type { Note } from "../../types";
 
 interface NoteCardProps {
@@ -13,6 +15,8 @@ interface NoteCardProps {
 export function NoteCard({ note, onEdit, onDelete, draggable = false }: NoteCardProps) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({ id: note.id });
+  // Le HTML stocké peut provenir d'un import : il est nettoyé avant affichage.
+  const safeContent = useMemo(() => sanitizeNoteHtml(note.content ?? ""), [note.content]);
 
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -63,7 +67,7 @@ export function NoteCard({ note, onEdit, onDelete, draggable = false }: NoteCard
           {note.content && (
             <div
               className="note-content text-xs text-zinc-600 dark:text-zinc-400 leading-relaxed line-clamp-6 overflow-hidden"
-              dangerouslySetInnerHTML={{ __html: note.content }}
+              dangerouslySetInnerHTML={{ __html: safeContent }}
             />
           )}
         </div>

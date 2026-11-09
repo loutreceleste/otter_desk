@@ -1,6 +1,7 @@
 import { Download, FolderOpen, Info, Moon, Pencil, Plus, Sun, Trash2, Upload } from "lucide-react";
 import { useState } from "react";
 import { AboutModal } from "../../components/ui/AboutModal";
+import { useAppInfo } from "../../lib/appInfo";
 import { exportData, importData } from "../../lib/ipc";
 import headbandUrl from "../../assets/headband.png";
 import type { Project } from "../../types";
@@ -26,6 +27,7 @@ export function Sidebar({
   darkMode,
   onToggleDark,
 }: SidebarProps) {
+  const appInfo = useAppInfo();
   const [showAbout, setShowAbout] = useState(false);
 
   const handleExport = async () => {
@@ -156,7 +158,7 @@ export function Sidebar({
           <Info size={14} />
           <span>À propos</span>
           <span className="ml-auto font-mono text-zinc-400 dark:text-zinc-500">
-            v{__APP_VERSION__}
+            {appInfo ? `v${appInfo.version}` : ""}
           </span>
         </button>
       </div>

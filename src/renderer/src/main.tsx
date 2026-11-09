@@ -1,6 +1,7 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App";
+import "./fonts/fonts.css";
 import "./styles.css";
 
 // Apply dark mode before first render to avoid flash

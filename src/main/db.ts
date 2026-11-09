@@ -1,5 +1,6 @@
 import Database from "better-sqlite3";
 import { app } from "electron";
+import fs from "fs";
 import path from "path";
 
 export type Project = {
@@ -288,6 +289,16 @@ export function dbUpdateCommand(
   );
 }
 
+/**
+ * Texte brut d'une commande enregistrée (champ « command »), ou null si elle n'existe pas.
+ * Utilisé par l'envoi vers un terminal : le texte envoyé provient toujours de la base,
+ * jamais d'une chaîne fournie par le renderer.
+ */
+export function dbGetCommandText(db: Database.Database, id: number): string | null {
+  const row = db.prepare("SELECT command FROM commands WHERE id = ?").get(id) as { command: string } | undefined;
+  return row ? row.command : null;
+}
+
 export function dbDeleteCommand(db: Database.Database, id: number): void {
   db.prepare("DELETE FROM commands WHERE id = ?").run(id);
 }
@@ -412,6 +423,52 @@ export function dbExportAll(db: Database.Database): ExportData {
       })),
     })),
   };
+}
+
+/**
+ * Vérifie la structure d'un export OtterDesk avant toute écriture en base.
+ * Lève une erreur explicite au premier champ invalide.
+ */
+export function validateExportData(data: unknown): asserts data is ExportData {
+  const isStr = (v: unknown): v is string => typeof v === "string";
+  const fail = (where: string): never => {
+    throw new Error(`Fichier d'import invalide : ${where}`);
+  };
+  if (typeof data !== "object" || data === null) fail("contenu JSON non objet");
+  const projects = (data as { projects?: unknown }).projects;
+  if (!Array.isArray(projects)) fail("champ « projects » manquant");
+  (projects as unknown[]).forEach((p, i) => {
+    const at = `projet #${i + 1}`;
+    if (typeof p !== "object" || p === null) fail(at);
+    const proj = p as Record<string, unknown>;
+    if (!isStr(proj.name) || !isStr(proj.description) || !isStr(proj.color)) fail(`${at} (name/description/color)`);
+    if (!Array.isArray(proj.commands) || !Array.isArray(proj.notes)) fail(`${at} (commands/notes)`);
+    (proj.commands as unknown[]).forEach((c, j) => {
+      const cmd = c as Record<string, unknown> | null;
+      if (
+        typeof cmd !== "object" || cmd === null ||
+        !isStr(cmd.title) || !isStr(cmd.command) || !isStr(cmd.description) || !isStr(cmd.category) ||
+        (typeof cmd.is_favorite !== "boolean" && typeof cmd.is_favorite !== "number") ||
+        !Array.isArray(cmd.tags) || !(cmd.tags as unknown[]).every(isStr)
+      ) fail(`${at}, commande #${j + 1}`);
+    });
+    (proj.notes as unknown[]).forEach((n, j) => {
+      const note = n as Record<string, unknown> | null;
+      if (typeof note !== "object" || note === null || !isStr(note.title) || !isStr(note.content)) {
+        fail(`${at}, note #${j + 1}`);
+      }
+    });
+  });
+}
+
+/** Sauvegarde à chaud de la base (API backup SQLite) dans userData/backups. */
+export async function dbBackup(db: Database.Database, label: string): Promise<string> {
+  const dir = path.join(app.getPath("userData"), "backups");
+  fs.mkdirSync(dir, { recursive: true });
+  const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+  const file = path.join(dir, `otterdesk-${label}-${stamp}.db`);
+  await db.backup(file);
+  return file;
 }
 
 export function dbImportAll(db: Database.Database, data: ExportData): void {

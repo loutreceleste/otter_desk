@@ -1,0 +1,125 @@
+# Construit OtterDesk pour macOS (Apple Silicon) et prépare une GitHub Release en BROUILLON.
+# Rien n'est publié automatiquement : la release doit être relue puis publiée manuellement
+# (bouton « Publish release » sur GitHub). Voir README › Publication.
+name: Release macOS
+
+on:
+  push:
+    tags: ["v[0-9]+.[0-9]+.[0-9]+"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag existant à construire (ex. v0.2.0)"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+env:
+  TAG: ${{ inputs.tag || github.ref_name }}
+
+jobs:
+  build-macos:
+    name: Build DMG arm64
+    runs-on: macos-15 # runner Apple Silicon (arm64)
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "lts/*"
+          cache: npm
+
+      - name: Vérifier que le tag correspond à la version du package.json
+        run: |
+          VERSION="$(node -p "require('./package.json').version")"
+          if [ "$TAG" != "v$VERSION" ]; then
+            echo "::error::Le tag $TAG ne correspond pas à package.json (v$VERSION)."
+            exit 1
+          fi
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+
+      - name: Installer les dépendances (lockfile)
+        run: npm ci
+
+      - name: Vérifier les types
+        run: |
+          npx tsc -p tsconfig.node.json --noEmit
+          npx tsc -p tsconfig.web.json --noEmit
+
+      - name: Tests
+        run: npm test
+
+      - name: Construire le DMG (signature ad hoc, sans publication)
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+        run: npm run build && npx electron-builder --mac --publish never
+
+      - name: Construire l'extension VS Code (VSIX)
+        working-directory: vscode-extension
+        run: |
+          npm ci
+          npm run package
+
+      - name: Vérifier les artefacts
+        run: |
+          DMG="release/OtterDesk-${VERSION}-arm64.dmg"
+          APP="release/mac-arm64/OtterDesk.app"
+          test -f "$DMG"
+          lipo -archs "$APP/Contents/MacOS/OtterDesk" | grep -qx arm64
+          codesign --verify --deep --strict "$APP"
+          test -f "$APP/Contents/Resources/app.asar.unpacked/node_modules/better-sqlite3/prebuilds/darwin-arm64.node"
+          MNT="$(hdiutil attach -nobrowse -readonly "$DMG" | tail -1 | awk -F'\t' '{print $NF}')"
+          test -d "$MNT/OtterDesk.app"
+          hdiutil detach "$MNT" -quiet
+
+      - name: Préparer les fichiers de la release
+        run: npm run release:assets
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-assets
+          path: release/github/
+          if-no-files-found: error
+          retention-days: 7
+
+  draft-release:
+    name: Créer la release (brouillon)
+    needs: build-macos
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # nécessaire uniquement pour créer la release
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-assets
+          path: assets
+
+      - name: Refuser une release existante (pas de doublon)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            echo "::error::Une release existe déjà pour $TAG. Supprimez-la ou utilisez un nouveau tag."
+            exit 1
+          fi
+
+      - name: Créer la release en brouillon
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          gh release create "$TAG" assets/* \
+            --draft \
+            --verify-tag \
+            --title "OtterDesk ${TAG#v}" \
+            --generate-notes

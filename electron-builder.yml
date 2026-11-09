@@ -6,14 +6,57 @@ directories:
   buildResources: resources
   output: release
 
+# better-sqlite3 >= 13 utilise N-API et embarque ses binaires précompilés
+# (darwin-arm64, win32-x64…) : aucune recompilation node-gyp n'est nécessaire,
+# ce qui évite d'exiger Visual Studio Build Tools sous Windows.
+npmRebuild: false
+
 files:
   - out/**/*
+  - "!out/*.tsbuildinfo"
   - "!**/*.{iobj,ipdb,exp,lib}"
   - "!out/renderer/assets/*.map"
+  # better-sqlite3 : sources C non utilisées à l'exécution (le binaire précompilé est chargé)
+  - "!node_modules/better-sqlite3/{deps,src,build}/**"
 
 extraResources:
   - from: resources/icon.ico
     to: icon.ico
+  - from: resources/trayTemplate.png
+    to: trayTemplate.png
+  - from: resources/trayTemplate@2x.png
+    to: trayTemplate@2x.png
+
+# ─── macOS (Apple Silicon, usage personnel local) ─────────────
+# Signature ad hoc ("-") : aucun compte Apple Developer requis.
+# Non notarisé : non destiné à une distribution publique.
+# Hardened runtime conservé (entitlements par défaut d'electron-builder,
+# qui incluent disable-library-validation requis par la signature ad hoc).
+mac:
+  target:
+    - target: dmg
+      arch:
+        - arm64
+  icon: resources/icon-mac.png
+  category: public.app-category.developer-tools
+  identity: "-"
+  notarize: false
+  entitlements: resources/entitlements.mac.plist
+  entitlementsInherit: resources/entitlements.mac.plist
+  extendInfo:
+    NSAppleEventsUsageDescription: "OtterDesk envoie la commande que vous choisissez vers la session iTerm2 ou l'onglet Terminal sélectionné, puis l'affiche."
+  files:
+    # Une liste ne contenant que des exclusions ferait inclure TOUT le dépôt
+    # (electron-builder ajoute alors « **/* ») : on repart donc de out/**/*.
+    - out/**/*
+    - "!out/*.tsbuildinfo"
+    - "!out/renderer/assets/*.map"
+    # Seul le binaire SQLite darwin-arm64 est utile dans le bundle Mac
+    - "!node_modules/better-sqlite3/prebuilds/{linux,linuxmusl,win32}-*.node"
+    - "!node_modules/better-sqlite3/prebuilds/darwin-x64.node"
+
+dmg:
+  artifactName: OtterDesk-${version}-${arch}.dmg
 
 win:
   executableName: OtterDesk

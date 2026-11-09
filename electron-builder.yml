@@ -69,13 +69,17 @@ win:
         - x64
   icon: resources/icon.ico
 
+# Windows : noms versionnés et sans espace. Le script de préparation de la release les
+# copie aussi sous des noms stables (OtterDesk-Windows-Setup-x64.exe,
+# OtterDesk-Windows-Portable-x64.exe) utilisés par les liens permanents du README.
 nsis:
+  artifactName: OtterDesk-${version}-Setup-${arch}.exe
   oneClick: true
   perMachine: false
   deleteAppDataOnUninstall: false
 
 portable:
-  artifactName: OtterDesk-${version}-portable.exe
+  artifactName: OtterDesk-${version}-Portable-${arch}.exe
 
 electronLanguages:
   - fr

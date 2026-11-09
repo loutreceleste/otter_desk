@@ -1,7 +1,20 @@
-# Construit OtterDesk pour macOS (Apple Silicon) et prépare une GitHub Release en BROUILLON.
-# Rien n'est publié automatiquement : la release doit être relue puis publiée manuellement
-# (bouton « Publish release » sur GitHub). Voir README › Publication.
-name: Release macOS
+# Construit OtterDesk pour macOS (Apple Silicon) et Windows (x64), puis prépare une GitHub
+# Release en BROUILLON. Rien n'est publié automatiquement : la release doit être relue puis
+# publiée manuellement (bouton « Publish release » sur GitHub). Voir README › Publication.
+#
+# Déclenchement :
+#  - push d'un tag vX.Y.Z → macOS + Windows → nouvelle release brouillon (8 fichiers) ;
+#  - manuel (Actions › Release › Run workflow) :
+#      scope = complete      : même chose pour un tag existant ;
+#      scope = windows-only  : construit uniquement Windows pour le tag indiqué et prépare
+#                              le complément d'une release EXISTANTE (exécutables + nouveau
+#                              SHA256SUMS.txt). Les fichiers macOS ne sont jamais modifiés.
+#                              Avec « attach », les fichiers sont ajoutés à cette release.
+#
+# Les outils de CI (scripts/smoke-test.mjs, scripts/prepare-release-assets.mjs) sont pris
+# dans la révision du workflow (dossier ci-tools/), et l'application dans le tag : un tag
+# plus ancien que ces outils peut donc être complété.
+name: Release
 
 on:
   push:
@@ -9,9 +22,20 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Tag existant à construire (ex. v0.2.0)"
+        description: "Tag existant à construire (ex. v0.3.0)"
         required: true
         type: string
+      scope:
+        description: "complete : macOS + Windows → nouvelle release brouillon ; windows-only : complément Windows d'une release existante"
+        required: true
+        type: choice
+        options: [complete, windows-only]
+        default: complete
+      attach:
+        description: "windows-only : ajouter les fichiers Windows et le nouveau SHA256SUMS.txt à la release existante"
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -22,10 +46,12 @@ concurrency:
 
 env:
   TAG: ${{ inputs.tag || github.ref_name }}
+  SCOPE: ${{ inputs.scope || 'complete' }}
 
 jobs:
   build-macos:
     name: Build DMG arm64
+    if: ${{ (inputs.scope || 'complete') == 'complete' }}
     runs-on: macos-15 # runner Apple Silicon (arm64)
     timeout-minutes: 40
     steps:
@@ -86,22 +112,169 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: release-assets
+          name: release-macos
+          path: release/github/
+          if-no-files-found: error
+          retention-days: 7
+
+  build-windows:
+    name: Build Windows x64 (NSIS + portable)
+    runs-on: windows-2025
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+
+      # Outils de CI de la révision du workflow (test de fumée, préparation des fichiers,
+      # icône Windows valide)
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          path: ci-tools
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            scripts/
+            resources/icon.ico
+
+      # Complément d'une release existante : l'icon.ico des tags ≤ v0.3.0 est invalide pour
+      # NSIS (une image 1024 px déclarée 256 px). Seule cette ressource de packaging est
+      # reprise de la révision du workflow ; le code de l'application reste celui du tag.
+      - name: Icône Windows valide (complément d'une release existante)
+        if: ${{ inputs.scope == 'windows-only' }}
+        run: |
+          if ! cmp -s ci-tools/resources/icon.ico resources/icon.ico; then
+            cp ci-tools/resources/icon.ico resources/icon.ico
+            echo "::notice::resources/icon.ico remplacé par la version valide de la révision du workflow."
+          fi
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "lts/*"
+          cache: npm
+
+      - name: Vérifier que le tag correspond à la version du package.json
+        run: |
+          VERSION="$(node -p "require('./package.json').version")"
+          if [ "$TAG" != "v$VERSION" ]; then
+            echo "::error::Le tag $TAG ne correspond pas à package.json (v$VERSION)."
+            exit 1
+          fi
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+
+      - name: Installer les dépendances (lockfile)
+        run: npm ci
+
+      - name: Vérifier les types
+        run: |
+          npx tsc -p tsconfig.node.json --noEmit
+          npx tsc -p tsconfig.web.json --noEmit
+
+      - name: Tests
+        run: npm test
+
+      # better-sqlite3 fournit son binaire précompilé win32-x64 (N-API) : aucune compilation,
+      # pas de Visual Studio Build Tools (npmRebuild: false dans electron-builder.yml).
+      - name: Construire l'installateur NSIS et la version portable (x64, sans publication)
+        run: npm run build && npx electron-builder --win --x64 --publish never
+
+      - name: Vérifier les artefacts
+        run: |
+          ls -la release
+          node - <<'EOF'
+          const fs = require("fs"), path = require("path");
+          const v = process.env.VERSION;
+          const exes = fs.readdirSync("release").filter((f) => /\.exe$/i.test(f) && f.includes(v) && !/uninstaller/i.test(f));
+          const setup = exes.filter((f) => /setup/i.test(f)), portable = exes.filter((f) => /portable/i.test(f));
+          if (setup.length !== 1 || portable.length !== 1) throw new Error(`exécutables inattendus : ${exes.join(", ")}`);
+          // Machine PE (0x8664 = x64) de l'application et du module SQLite
+          const machine = (f) => { const b = fs.readFileSync(f); const pe = b.readUInt32LE(0x3c); return b.readUInt16LE(pe + 4); };
+          const app = "release/win-unpacked/OtterDesk.exe";
+          const sqlite = "release/win-unpacked/resources/app.asar.unpacked/node_modules/better-sqlite3/prebuilds/win32-x64.node";
+          for (const f of [app, sqlite]) {
+            if (!fs.existsSync(f)) throw new Error(`absent : ${f}`);
+            if (machine(f) !== 0x8664) throw new Error(`${f} n'est pas x64`);
+            console.log(`x64 ✓ ${f}`);
+          }
+          for (const f of [...setup, ...portable]) console.log(`✓ ${f} (${(fs.statSync(path.join("release", f)).size / 1e6).toFixed(1)} Mo)`);
+          fs.appendFileSync(process.env.GITHUB_ENV, `SETUP_EXE=release/${setup[0]}\nPORTABLE_EXE=release/${portable[0]}\n`);
+          EOF
+
+      # Tests de fumée de l'application réellement distribuée : démarrage, SQLite, persistance,
+      # projets et commandes, navigation, bouton Copier, barre de titre Windows, intégrations
+      # macOS absentes. Chaque variante utilise un dossier de données temporaire.
+      - name: Test de fumée — application décompressée
+        run: node ci-tools/scripts/smoke-test.mjs release/win-unpacked/OtterDesk.exe --json smoke-unpacked.json
+
+      - name: Test de fumée — installateur NSIS (installation silencieuse)
+        shell: pwsh
+        run: |
+          $p = Start-Process -FilePath $env:SETUP_EXE -ArgumentList "/S" -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw "Installateur : code $($p.ExitCode)" }
+          $exe = Get-ChildItem "$env:LOCALAPPDATA\Programs" -Recurse -Filter OtterDesk.exe | Select-Object -First 1
+          if (-not $exe) { throw "OtterDesk.exe introuvable après installation" }
+          Write-Host "Installé : $($exe.FullName)"
+          $lnk = Get-ChildItem "$env:APPDATA\Microsoft\Windows\Start Menu\Programs" -Recurse -Filter "OtterDesk*.lnk" | Select-Object -First 1
+          if (-not $lnk) { throw "Raccourci du menu Démarrer absent" }
+          Write-Host "Menu Démarrer : $($lnk.FullName)"
+          node ci-tools/scripts/smoke-test.mjs $exe.FullName --json smoke-installed.json
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Test de fumée — version portable
+        run: node ci-tools/scripts/smoke-test.mjs "$PORTABLE_EXE" --json smoke-portable.json
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: smoke-tests-windows
+          path: smoke-*.json
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Préparer les fichiers de la release
+        run: node ci-tools/scripts/prepare-release-assets.mjs --platform win --no-checksums
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-windows
           path: release/github/
           if-no-files-found: error
           retention-days: 7
 
   draft-release:
     name: Créer la release (brouillon)
-    needs: build-macos
+    if: ${{ (inputs.scope || 'complete') == 'complete' }}
+    # Les deux plateformes sont obligatoires : un échec Windows ou macOS = aucune release.
+    needs: [build-macos, build-windows]
     runs-on: ubuntu-latest
     permissions:
       contents: write # nécessaire uniquement pour créer la release
     steps:
       - uses: actions/download-artifact@v4
         with:
-          name: release-assets
+          pattern: release-*
+          merge-multiple: true
           path: assets
+
+      - name: Vérifier les fichiers et calculer SHA256SUMS.txt (toutes plateformes)
+        run: |
+          VERSION="${TAG#v}"
+          cd assets
+          rm -f SHA256SUMS.txt
+          for f in "OtterDesk-${VERSION}-arm64.dmg" OtterDesk-mac-arm64.dmg \
+                   "OtterDesk-${VERSION}-Setup-x64.exe" OtterDesk-Windows-Setup-x64.exe \
+                   "OtterDesk-${VERSION}-Portable-x64.exe" OtterDesk-Windows-Portable-x64.exe \
+                   otterdesk-terminal-bridge.vsix; do
+            test -f "$f" || { echo "::error::Fichier manquant : $f"; exit 1; }
+          done
+          LC_ALL=C sha256sum -- * | LC_ALL=C sort -k2 > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+          ls -la
+          # Annotation de l'exécution : fichiers de la release et leurs sommes
+          echo "::notice title=Fichiers de la release ${TAG}::$(ls -1 | while read -r f; do printf '%s  %s octets%%0A' "$f" "$(stat -c %s "$f")"; done)SHA256SUMS.txt :%0A$(sed 's/$/%0A/' SHA256SUMS.txt | tr -d '\n')"
 
       - name: Refuser une release existante (pas de doublon)
         env:
@@ -109,7 +282,7 @@ jobs:
           GH_REPO: ${{ github.repository }}
         run: |
           if gh release view "$TAG" > /dev/null 2>&1; then
-            echo "::error::Une release existe déjà pour $TAG. Supprimez-la ou utilisez un nouveau tag."
+            echo "::error::Une release existe déjà pour $TAG. Pour la compléter avec Windows, utilisez scope=windows-only."
             exit 1
           fi
 
@@ -123,3 +296,57 @@ jobs:
             --verify-tag \
             --title "OtterDesk ${TAG#v}" \
             --generate-notes
+
+  complete-release-windows:
+    name: Compléter une release existante (Windows)
+    if: ${{ inputs.scope == 'windows-only' }}
+    needs: build-windows
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # utilisé uniquement si « attach » est coché
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-windows
+          path: windows
+
+      - name: Vérifier la release existante et préparer le nouveau SHA256SUMS.txt
+        run: |
+          gh release view "$TAG" --json isDraft,isPrerelease,assets \
+            --jq '"brouillon=\(.isDraft) pré-release=\(.isPrerelease)", (.assets[].name)'
+          # Aucun fichier Windows ne doit déjà exister : rien n'est jamais remplacé.
+          if gh release view "$TAG" --json assets --jq '.assets[].name' | grep -qiE '\.exe$'; then
+            echo "::error::La release $TAG contient déjà des exécutables Windows : rien n'est modifié."
+            exit 1
+          fi
+          mkdir -p current complement
+          gh release download "$TAG" --dir current
+          # Les sommes publiées doivent correspondre aux fichiers publiés (macOS + VSIX).
+          (cd current && sha256sum -c SHA256SUMS.txt)
+          cp windows/*.exe complement/
+          # Nouveau SHA256SUMS.txt = lignes publiées inchangées + exécutables Windows.
+          { cat current/SHA256SUMS.txt; (cd complement && LC_ALL=C sha256sum -- *.exe); } \
+            | LC_ALL=C sort -k2 > complement/SHA256SUMS.txt
+          echo "── Nouveau SHA256SUMS.txt"; cat complement/SHA256SUMS.txt
+          # Contrôle : toutes les lignes macOS/VSIX publiées sont conservées à l'identique.
+          grep -Fxf current/SHA256SUMS.txt complement/SHA256SUMS.txt | diff - <(LC_ALL=C sort -k2 current/SHA256SUMS.txt)
+          ls -la complement
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-complement-windows
+          path: complement/
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Ajouter les fichiers Windows à la release (si « attach »)
+        if: ${{ inputs.attach }}
+        run: |
+          # Exécutables : ajout simple (échec si un fichier du même nom existait).
+          gh release upload "$TAG" complement/*.exe
+          # SHA256SUMS.txt : seul fichier remplacé, ses lignes macOS sont inchangées.
+          gh release upload "$TAG" complement/SHA256SUMS.txt --clobber
+          gh release view "$TAG" --json assets --jq '.assets[] | "\(.name)  \(.size)"'

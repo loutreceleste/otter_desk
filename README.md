@@ -41,10 +41,48 @@ Installation :
 > cas de blocage persistant, retirez l'attribut de quarantaine dans un terminal :
 > `xattr -dr com.apple.quarantine /Applications/OtterDesk.app`
 
-### Windows
+### Windows — 64 bits (Windows 10 et 11)
 
-Aucun exécutable Windows n'est publié pour l'instant : la version Windows se compile depuis
-les sources (voir [Développement](#développement)).
+**[⬇︎ Télécharger OtterDesk — Installateur (.exe)](https://github.com/loutreceleste/otter_desk/releases/latest/download/OtterDesk-Windows-Setup-x64.exe)**
+
+**[⬇︎ Télécharger OtterDesk — Version portable (.exe)](https://github.com/loutreceleste/otter_desk/releases/latest/download/OtterDesk-Windows-Portable-x64.exe)**
+
+Ces liens pointent toujours vers la dernière version stable publiée. Aucune installation de
+Node.js ni d'outil de développement n'est nécessaire.
+
+**Installation classique** (recommandée) :
+
+1. Téléchargez l'installateur Windows.
+2. Exécutez le fichier `.exe`.
+3. L'installation se fait en un clic, sans droits administrateur, pour votre compte
+   Windows uniquement. OtterDesk se lance à la fin de l'installation.
+4. Ensuite, lancez OtterDesk depuis le menu **Démarrer** ou le raccourci du Bureau.
+
+Pour désinstaller : **Paramètres › Applications › Applications installées › OtterDesk**.
+Vos données sont conservées.
+
+**Version portable** :
+
+1. Téléchargez la version portable.
+2. Placez le fichier dans le dossier de votre choix (par exemple une clé USB).
+3. Exécutez-le directement : aucune installation n'est nécessaire.
+
+La version portable ne s'installe pas, mais elle conserve ses données dans votre dossier
+utilisateur Windows (`%APPDATA%\otter-desk`), comme la version installée : les deux versions
+partagent donc les mêmes projets et commandes. Son démarrage est un peu plus lent, car elle
+se décompresse à chaque lancement.
+
+> **Avertissement SmartScreen.** Les exécutables OtterDesk ne sont pas encore signés avec un
+> certificat de signature de code. Au premier lancement, Windows peut afficher « Windows a
+> protégé votre ordinateur » : cliquez sur **Informations complémentaires**, vérifiez que le
+> fichier s'appelle bien `OtterDesk-Windows-…-x64.exe`, puis sur **Exécuter quand même**. Votre
+> navigateur peut aussi signaler un fichier « peu téléchargé » : choisissez **Conserver**.
+> Ne désactivez ni SmartScreen ni Windows Defender. Pour vérifier l'intégrité du fichier,
+> comparez son empreinte à celle du fichier `SHA256SUMS.txt` de la release :
+> `Get-FileHash .\OtterDesk-Windows-Setup-x64.exe -Algorithm SHA256` (PowerShell).
+
+Sous Windows, l'envoi direct vers un terminal n'est pas disponible (fonction macOS) : utilisez
+**Copier**. Le raccourci global afficher / masquer est **Ctrl+Shift+Space**.
 
 ## Fonctionnalités
 
@@ -259,7 +297,7 @@ npm ci               # dépendances (lockfile)
 npm run dev          # lancement en développement (hot-reload)
 npm test             # tests (sécurité des commandes, protocole, pont VS Code)
 npm run dist:mac     # DMG arm64 → release/OtterDesk-<version>-arm64.dmg (sur un Mac)
-npm run dist:win     # installeur NSIS + .exe portable (sur Windows)
+npm run dist:win     # installateur NSIS + .exe portable x64 → release/ (Windows, ou macOS en compilation croisée)
 ```
 
 Les scripts d'installation des dépendances sont filtrés par le champ `allowScripts` du
@@ -337,21 +375,37 @@ git push origin v0.3.0
    - installation propre (`npm ci`), vérification des types et tests ;
    - DMG arm64 et VSIX ;
    - vérification des artefacts (architecture, signature, module SQLite, contenu du DMG) ;
+   - en parallèle, sur un runner Windows : installateur NSIS et version portable x64, puis
+     **tests de fumée** de l'application réellement construite (application décompressée,
+     installation silencieuse, version portable) : démarrage, SQLite, persistance,
+     projets et commandes, bouton Copier, barre de titre Windows, intégrations macOS absentes ;
    - création d'une **release en brouillon** contenant :
      - `OtterDesk-<version>-arm64.dmg` (archive versionnée),
      - `OtterDesk-mac-arm64.dmg` (nom stable, utilisé par le lien du README),
+     - `OtterDesk-<version>-Setup-x64.exe` et `OtterDesk-Windows-Setup-x64.exe` (nom stable),
+     - `OtterDesk-<version>-Portable-x64.exe` et `OtterDesk-Windows-Portable-x64.exe` (nom stable),
      - `otterdesk-terminal-bridge.vsix`,
-     - `SHA256SUMS.txt`.
+     - `SHA256SUMS.txt` (toutes plateformes).
 
-   Si le build échoue, aucune release n'est créée. Si une release existe déjà pour le tag,
-   le workflow s'arrête.
+   Si le build macOS **ou** Windows échoue, aucune release n'est créée. Si une release existe
+   déjà pour le tag, le workflow s'arrête.
 4. **Relecture puis publication** : sur GitHub › Releases, relisez le brouillon (les notes
    sont générées automatiquement), puis cliquez sur **Publish release**.
 5. **Vérification** : les liens « Télécharger » du README et le badge pointent désormais
    vers cette version, sans aucune modification du README.
 
 Le workflow peut aussi être relancé manuellement pour un tag existant : onglet *Actions* ›
-*Release macOS* › *Run workflow*.
+*Release* › *Run workflow* (`scope` = `complete`).
+
+**Compléter une release existante avec Windows** (`scope` = `windows-only`) : le workflow
+construit et teste uniquement Windows à partir du tag indiqué, vérifie les sommes des fichiers
+déjà publiés, puis prépare les exécutables et un nouveau `SHA256SUMS.txt` (lignes existantes
+inchangées + exécutables Windows) dans l'artefact `release-complement-windows`. Les fichiers
+macOS ne sont jamais modifiés, et le workflow refuse d'agir si la release contient déjà des
+`.exe`. Cochez **attach** pour ajouter directement ces fichiers à la release ; sinon,
+relisez l'artefact puis ajoutez-les vous-même (GitHub › Releases › *Edit*, ou
+`gh release upload vX.Y.Z OtterDesk-*.exe` puis
+`gh release upload vX.Y.Z SHA256SUMS.txt --clobber`).
 
 **Validation après publication** (les liens ne fonctionnent qu'une fois la release publiée,
 pas en brouillon) :
@@ -359,6 +413,8 @@ pas en brouillon) :
 ```bash
 curl -sIL https://github.com/loutreceleste/otter_desk/releases/latest/download/OtterDesk-mac-arm64.dmg | grep -E "^HTTP"
 curl -sIL https://github.com/loutreceleste/otter_desk/releases/latest/download/otterdesk-terminal-bridge.vsix | grep -E "^HTTP"
+curl -sIL https://github.com/loutreceleste/otter_desk/releases/latest/download/OtterDesk-Windows-Setup-x64.exe | grep -E "^HTTP"
+curl -sIL https://github.com/loutreceleste/otter_desk/releases/latest/download/OtterDesk-Windows-Portable-x64.exe | grep -E "^HTTP"
 # dans un dossier contenant les fichiers téléchargés depuis la release :
 shasum -a 256 -c SHA256SUMS.txt
 ```
@@ -368,7 +424,7 @@ La dernière ligne `HTTP` de chaque `curl` doit indiquer `200`.
 **Alternative manuelle** (GitHub CLI) :
 
 ```bash
-npm run dist:mac && (cd vscode-extension && npm ci && npm run package) && npm run release:assets
+npm run dist:mac && npm run dist:win && (cd vscode-extension && npm ci && npm run package) && npm run release:assets
 gh release create vX.Y.Z release/github/* --draft --generate-notes --title "OtterDesk X.Y.Z"
 ```
 

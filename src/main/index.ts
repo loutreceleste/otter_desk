@@ -137,9 +137,20 @@ function createWindow(iconPath: string): BrowserWindow {
   // dans la fenêtre (le preload y exposerait window.api) ni ouvrir automatiquement une
   // URL externe. Une ouverture externe future devra passer par une action explicite et
   // une URL validée par le processus principal.
+  // Seule exception : le rechargement de la page de l'application elle-même (même URL),
+  // utilisé par l'interface après un import.
+  const isAppReload = (url: string): boolean => {
+    const strip = (u: string) => u.split("#")[0];
+    const current = win.webContents.getURL();
+    return current !== "" && strip(url) === strip(current);
+  };
   win.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
-  win.webContents.on("will-navigate", (event) => event.preventDefault());
-  win.webContents.on("will-frame-navigate", (event) => event.preventDefault());
+  win.webContents.on("will-navigate", (event) => {
+    if (!isAppReload(event.url)) event.preventDefault();
+  });
+  win.webContents.on("will-frame-navigate", (event) => {
+    if (!(event.isMainFrame && isAppReload(event.url))) event.preventDefault();
+  });
   win.webContents.on("will-attach-webview", (event) => event.preventDefault());
 
   if (process.env["ELECTRON_RENDERER_URL"]) {
